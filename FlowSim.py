@@ -15,17 +15,20 @@ import math
 
 	python FlowSim.py flows.txt sim_stats.csv
 
-	Will read flow information from flows.txt and write results to sim_stats.csv 
+	Will read flow information from flows.txt and write results to sim_stats-<datetime>.csv 
 
 	This script expects that the format of the input flows file is:
 
 	time,src_ip,src_port,dst_ip,dst_port,size
-	t1,sip1,sp1,dip1,dp2,s1
-	t2,sip2,sp2,dip2,dp2,s2
+	t_1,sip_1,sp_1,dip_1,dp_2,s1
+	t_2,sip_2,sp_2,dip_2,dp_2,s_2
 	...
-	tn,sipn,spn,dipn,dpn,sn
+	t_n,sip_n,sp_n,dip_n,dp_n,s_n
 
-	Where time is given in seconds, and size is give in bytes.
+	Where time is given in seconds, and size is given in bytes.  To attempt to synchronize across machines, 
+	outgoing flows will not begin until after 90 seconds have passed.  The input file will be read 
+	and iPerf servers will be started on ports 11000-11199 during this interval.  After all outgoing flows
+	have completed, the program will wait for 3 minutes before terminating the iPerf servers. 
 
 	Note: to support large number of concurrent flows, the maximum number of open files descriptors
 	will likely need to be increased. 
@@ -42,12 +45,6 @@ import math
 	To have limit remain at 10000 after reboot, edit /etc/sysctl.conf and append the line:
 	fs.file-max = 100000
 """
-
-	##TODO 
-	##Mark time when script first started; after flow file is read and servers are started, 
-	##Check delta between time started and current time, sleep for 60 seconds - delta
-	##Append start date/hour/minute to output file name
-
 
 write_lock = threading.Lock() # lock for writing to output file
 all_finished = threading.Event() # event for signalling when all flows have completed
@@ -114,7 +111,6 @@ def simulateFlow(flow_id, flow, output_filepath):
 	[  3]  0.0- 0.0 sec   128 KBytes  27.6 Gbits/sec
 	"""
 
-	print out
 	interval_string = re.findall("[0-9]+\.?[0-9]+- [0-9]+\.?[0-9]+ sec", out)[0]
 	bandwidth_string = re.findall("[0-9]+\.?[0-9]+ [a-zA-Z]+/sec", out)[0]
 
@@ -161,8 +157,30 @@ def main(argv):
 
 	validate_args(argv)
 
+	init_time = time.time()
+	path_time = time.strftime("%Y-%m-%d-h%H-m%M-s%S", time.localtime(init_time))
+
 	flow_filepath = argv[0]
-	output_filepath = argv[1]
+	output_template = argv[1]
+	template_tokens = output_template.split(os.path.sep)
+	output_filepath = ""
+	if len(template_tokens) > 1:
+		if output_template[0] == os.path.sep:
+			output_filepath = os.path.sep
+		for i in range(0, len(template_tokens)-1):
+			output_filepath = os.path.join(output_filepath, template_tokens[i])
+		output_template = template_tokens[-1]
+	name_tokens = output_template.split(".")
+	filename = ""
+	if len(name_tokens) > 1:
+		for i in range(0, len(name_tokens)-2):
+			filename = filename + name_tokens[i] + '.'
+		filename = filename + name_tokens[-2] + "-{}".format(path_time)
+		filename = filename + "." + name_tokens[-1]
+	else:
+		filename = output_filepath + "-{}".format(path_time)
+
+	output_filepath = os.path.join(output_filepath, filename)
 	flows = list()
 
 	# write header line to output file
@@ -189,20 +207,28 @@ def main(argv):
 		print("Error reading input file")
 		traceback.print_exc()
 		sys.exit(-1)
+	print "Input file read..."
 
 	all_finished.clear()
 	# start iperf servers
 	server_processes = startServers()
+	print "iPerf servers started..."
+
+	# begin sending flows 90 seconds after start time, to synchronize across machines
+	wait_time = 90 - (time.time() - init_time)
+	print "Flow transmissions beginning in {} seconds".format(wait_time)
+	time.sleep(wait_time)
+
 	# schedule and execute outgoing flows
 	scheduleFlows(flows, output_filepath)
 
-	# after all outgoing flows have completed, wait ten minutes, then terminate servers
+	# after all outgoing flows have completed, wait three minutes, then terminate servers
 	# this is pretty arbitrary; preferable to manually terminate after simulation is finished?
 	# or specify time to wait before terminating servers as a command line argument?
 	# otherwise, need machines to somehow signal each other when they have completed outgoing flows
 	all_finished.wait()
-	print ("All outgoing flows completed, servers terminating in ten minutes...")
-	time.sleep(600)
+	print ("All outgoing flows completed, iPerf servers terminating in three minutes...")
+	time.sleep(180)
 	killServers(server_processes)
 	print "Output written to {}".format(output_filepath)
 
