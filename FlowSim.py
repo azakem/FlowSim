@@ -91,7 +91,7 @@ def simulateFlow(flow_id, flow, output_filepath):
 	""" execute an iperf client for a given flow, and write flow id, duration, and bandwidth to output file"""
 	try:
 		print "flow {} starting".format(flow_id)
-		cmd_line = ["/usr/bin/iperf", "-c", str(flow.dst_ip), "-p", str(flow.dst_port), "-n", str(flow.flow_size)]
+		cmd_line = ["/usr/bin/iperf3", "-c", str(flow.dst_ip), "-p", str(flow.dst_port), "-i", "0", "-n", str(flow.flow_size)]
 		p = subprocess.Popen(cmd_line, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 		out, err = p.communicate()
 		p.wait()
@@ -100,7 +100,7 @@ def simulateFlow(flow_id, flow, output_filepath):
 
 	print "flow {} finished".format(flow_id)
 
-	""" Lines below parse output from iperf; example output is shown below:
+	""" Lines below parse output from iperf; example output is shown below for iperf:
 
 	------------------------------------------------------------
 	Client connecting to 127.0.0.1, TCP port 10000
@@ -109,9 +109,23 @@ def simulateFlow(flow_id, flow, output_filepath):
 	[  3] local 127.0.0.1 port 49322 connected with 127.0.0.1 port 10000
 	[ ID] Interval       Transfer     Bandwidth
 	[  3]  0.0- 0.0 sec   128 KBytes  27.6 Gbits/sec
+
+
+	Example ouput is shown below for iperf3, with '-i 0' option:
+
+	Connecting to host 127.0.0.1, port 10000
+	[  4] local 127.0.0.1 port 47338 connected to 127.0.0.1 port 10000
+	[ ID] Interval           Transfer     Bandwidth       Retr  Cwnd
+	[  4]   0.00-5.90   sec  9.31 GBytes  13.6 Gbits/sec    0   2.00 MBytes       
+	- - - - - - - - - - - - - - - - - - - - - - - - -
+	[ ID] Interval           Transfer     Bandwidth       Retr
+	[  4]   0.00-5.90   sec  9.31 GBytes  13.6 Gbits/sec    0             sender
+	[  4]   0.00-5.90   sec  9.30 GBytes  13.6 Gbits/sec                  receiver
+
+	iperf Done.
 	"""
 
-	interval_string = re.findall("[0-9]+\.?[0-9]+- [0-9]+\.?[0-9]+ sec", out)[0]
+	interval_string = re.findall("[0-9]+\.?[0-9]+-[0-9]+\.?[0-9]+[\s]+sec", out)[0]
 	bandwidth_string = re.findall("[0-9]+\.?[0-9]+ [a-zA-Z]+/sec", out)[0]
 
 	interval = re.findall("[0-9]+\.?[0-9]+", interval_string)
@@ -143,7 +157,7 @@ def startServers():
 	server_processes = list()
 	FNULL = open(os.devnull, 'w')
 	for i in range(11000, 11200):
-		cmd_line = ["/usr/bin/iperf", "-s", "-p", str(i)]
+		cmd_line = ["/usr/bin/iperf3", "-s", "-p", str(i)]
 		p = subprocess.Popen(cmd_line, stdout=FNULL, close_fds=True)
 		server_processes.append(p)
 	return server_processes
@@ -230,6 +244,7 @@ def main(argv):
 	print ("All outgoing flows completed, iPerf servers terminating in three minutes...")
 	time.sleep(180)
 	killServers(server_processes)
+	# note: when using iperf3, terminating servers will cause "iperf3: interrupt - the server has terminated" messages to stderr
 	print "Output written to {}".format(output_filepath)
 
 def validate_args(argv):
