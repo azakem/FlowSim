@@ -13,7 +13,7 @@ import math
 	
 	E.g.:
 
-	python FlowSim.py flows.txt sim_stats.csv
+	python FlowSim.py flows.csv sim_stats.csv
 
 	Will read flow information from flows.txt and write results to sim_stats-<datetime>.csv 
 
@@ -79,7 +79,7 @@ def scheduleFlows(flows, output_filepath):
 	flow_id = 0
 	iperf_client_threads = list()
 	for flow in flows:
-		p = Timer(float(flow.start_time)/1000, simulateFlow, (flow_id, flow, output_filepath))
+		p = Timer(flow.start_time, simulateFlow, (flow_id, flow, output_filepath))
 		p.start()
 		flow_id += 1
 		iperf_client_threads.append(p)
@@ -91,7 +91,9 @@ def simulateFlow(flow_id, flow, output_filepath):
 	""" execute an iperf client for a given flow, and write flow id, duration, and bandwidth to output file"""
 	try:
 		print "flow {} starting".format(flow_id)
-		cmd_line = ["/usr/bin/iperf3", "-c", str(flow.dst_ip), "-p", str(flow.dst_port), "-i", "0", "-n", str(flow.flow_size)]
+		#iperf3 version commented below
+		#cmd_line = ["/usr/bin/iperf3", "-c", str(flow.dst_ip), "-p", str(flow.dst_port), "-i", "0", "-n", str(flow.flow_size)]
+		cmd_line = ["/usr/bin/iperf", "-c", str(flow.dst_ip), "-p", str(flow.dst_port), "-n", str(flow.flow_size)]
 		p = subprocess.Popen(cmd_line, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 		out, err = p.communicate()
 		p.wait()
@@ -125,7 +127,10 @@ def simulateFlow(flow_id, flow, output_filepath):
 	iperf Done.
 	"""
 
-	interval_string = re.findall("[0-9]+\.?[0-9]+-[0-9]+\.?[0-9]+[\s]+sec", out)[0]
+	#print out
+	#print err
+
+	interval_string = re.findall("[0-9]+\.?[0-9]+-[\s]*[0-9]+\.?[0-9]+[\s]+sec", out)[0]
 	bandwidth_string = re.findall("[0-9]+\.?[0-9]+ [a-zA-Z]+/sec", out)[0]
 
 	interval = re.findall("[0-9]+\.?[0-9]+", interval_string)
@@ -157,7 +162,9 @@ def startServers():
 	server_processes = list()
 	FNULL = open(os.devnull, 'w')
 	for i in range(11000, 11200):
-		cmd_line = ["/usr/bin/iperf3", "-s", "-p", str(i)]
+		#iperf3 version commented below
+		#cmd_line = ["/usr/bin/iperf3", "-s", "-p", str(i)]
+		cmd_line = ["/usr/bin/iperf", "-s", "-p", str(i)]
 		p = subprocess.Popen(cmd_line, stdout=FNULL, close_fds=True)
 		server_processes.append(p)
 	return server_processes
